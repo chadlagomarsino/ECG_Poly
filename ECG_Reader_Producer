@@ -1,0 +1,133 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+Created on Fri Feb 9 17:10:13 2018
+
+@author: ChadTheMonster
+"""
+
+import multiprocessing 
+import DB_manager
+import serial 
+import mysql.connector # connection from python to mySQL
+from datetime import datetime # allows date/time of entries to be recordered
+import time
+
+# Import libraries
+import numpy as np
+from matplotlib import pyplot as plt
+from drawnow import drawnow 
+
+def Producer(): 
+    # open serial port at 9600 baud to pair with Ardiuno board
+    dev = '/dev/cu.usbmodem1421'
+    try:
+        ser = serial.Serial(dev, 9600, timeout = 1)
+    except: 
+        print('ARDUINO CONNECTION NOT FOUND')
+        return
+    # while connected to arudino
+    while True:
+        time.sleep(.05)
+        try: 
+            # read 1 byte from serial connection (one voltage value)
+            # remove tags
+            voltage = ser.readline().decode().strip('\r\n').strip()
+            try:
+                voltage = float(voltage)
+            except:
+                print("BLANK INPUT")
+                continue
+            #print(type(voltage))
+            #print(voltage) # uncomment for testing
+            # add voltage table
+            try: 
+                dbu.AddEntryToTable(voltage)
+            except:
+                print('DATABASE ERROR')
+                return
+        except:
+            print('ARDUINO CONNECTION LOST')
+            return
+            
+
+def Consumer():
+    try:
+        p = 'spooky74'
+        cnx2 = mysql.connector.connect(user = 'root',
+									password = p,
+									host = 'localhost')
+        cursor2 = cnx2.cursor(buffered = True)
+        cnx2.database = dbu.db
+    except:
+        print("Connection 2 ERROR")
+        
+    def grab_data(cursor2, offset):
+        cmd = "SELECT ID, voltage FROM test LIMIT " + str(offset) + ", 5"
+        print ("RUNNING COMMAND2: " + cmd)
+        try:
+            cursor2.execute(cmd)
+        except mysql.connector.Error as err:
+            print ('ERROR MESSAGE: ' + str(err.msg))
+            print ('WITH ' + cmd)
+        row = cursor2.fetchone()
+        if row == None:
+            print("BLANK INPUT 2")
+        while row is not None:
+            offset = row[0]
+            out_voltage = row[1]
+            print(row[1])
+            print(row[0])
+            return [offset, out_voltage]
+        
+    
+    blit = True
+    x = np.linspace(0,150., num=100)
+    fig = plt.figure()
+    ax2 = fig.add_subplot(1, 1, 1)
+
+    fig.canvas.draw()   # note that the first draw comes before setting data 
+
+    h2, = ax2.plot(x, lw=3)
+    ax2.set_ylim([-5,5])
+
+
+    if blit:
+        # cache the background
+        ax2background = fig.canvas.copy_from_bbox(ax2.bbox)
+        
+    offset = 0
+    
+    for i in np.arange(10000):
+        time.sleep(.005)
+        new_data = grab_data(cursor2, offset)
+        offset = new_data[0]
+        graph_voltage = new_data[1]
+        h2.set_ydata(graph_voltage)
+        if blit:
+            # restore background
+            fig.canvas.restore_region(ax2background)
+            ax2.draw_artist(h2)
+
+            # fill in the axes rectangle
+            fig.canvas.blit(ax2.bbox)
+
+        else:
+            # redraw everything
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+
+
+        plt.pause(0.000000000001) 
+        #plt.pause calls canvas.draw(), as can be read here:
+        #http://bastibe.de/2013-05-30-speeding-up-matplotlib.html
+    
+if __name__ == '__main__':
+    database = 'ECGPAR3'
+    tableName = 'test' 
+    dbu = DB_manager.DatabaseUtility(database, tableName) # create DB object 
+    p = multiprocessing.Process(target = Producer, name = 'Producer')
+    p.start()
+    #time.sleep(5)
+    #c = multiprocessing.Process(target = Consumer, name = 'Consumer')
+    #c.start()
