@@ -1,0 +1,143 @@
+from matplotlib import pyplot as plt
+import numpy as np
+import DB_manager
+import mysql.connector # connection from python to mySQL
+import time
+
+def live_update_demo(blit = True):
+    
+    try:
+        p = 'spooky74'
+        cnx2 = mysql.connector.connect(user = 'root',
+									password = p,
+									host = 'localhost')
+        cursor2 = cnx2.cursor(buffered = True)
+        cnx2.database = dbu.db
+    except:
+        print("Connection 2 ERROR")
+        
+    def grab_data(cursor2, offset):
+        flag = 0
+        cmd = "SELECT ID, voltage FROM test LIMIT " + str(offset) + ", 5"
+        print ("RUNNING COMMAND2: " + cmd)
+        try:
+            cursor2.execute(cmd)
+        except mysql.connector.Error as err:
+            print ('ERROR MESSAGE: ' + str(err.msg))
+            print ('WITH ' + cmd)
+        row = cursor2.fetchone()
+        if row == None:
+            if flag == 1:
+                print("END OF TABLE")
+                return
+            print("BLANK INPUT 2")
+            flag = 1
+            offset = row[0]
+            return [offset + 1, 0.0]
+        while row is not None:
+            offset = row[0]
+            out_voltage = row[1]
+            print(row[1])
+            print(row[0])
+            return [offset, out_voltage]
+        
+    
+    blit = True
+    x = np.linspace(0,150., num=100)
+    fig = plt.figure()
+    ax2 = fig.add_subplot(1, 1, 1)
+    
+    # minor ticks every 5
+    minor_ticks = np.arange(0, 101, 5)
+
+    #ax2.set_xticks(major_ticks)
+    ax2.set_xticks(minor_ticks, minor=True)
+    #ax2.set_yticks(major_ticks)
+    ax2.set_yticks(minor_ticks, minor=True)
+
+    # Or if you want different settings for the grids:
+    ax2.grid(which='minor', alpha=0.2)
+
+    fig.canvas.draw()   # note that the first draw comes before setting data 
+
+    h2, = ax2.plot(x, lw=1)
+    ax2.set_ylim([-1000,1000])
+    plt.ylabel('mVoltage (mV)', fontsize=16)
+
+
+
+    if blit:
+        # cache the background
+        ax2background = fig.canvas.copy_from_bbox(ax2.bbox)
+        
+    offset = 0
+    voltage_array = np.zeros(100)
+    whole_voltage_array = np.zeros(0)
+    
+    for i in np.arange(2000):
+        time.sleep(.0001)
+        try:
+            new_data = grab_data(cursor2, offset)
+        except:
+            print("END OF FILE")
+            
+            while len(x) < len(whole_voltage_array):
+                x = np.append(x, 0)
+                
+            print(len(x))
+            print(len(whole_voltage_array))
+            
+            fig3 = plt.figure()
+            ax3 = fig3.add_subplot(1,1,1)
+                
+            # Minor ticks every 5
+            minor_ticks = np.arange(0, 101, 5)
+
+            #ax2.set_xticks(major_ticks)
+            ax3.set_xticks(minor_ticks, minor=True)
+            #ax2.set_yticks(major_ticks)
+            ax3.set_yticks(minor_ticks, minor=True)
+
+            # Or if you want different settings for the grids:
+            ax3.grid(which='minor', alpha=0.2)
+
+            fig3.canvas.draw()   # note that the first draw comes before setting data
+                
+            h3, = ax3.plot(x, lw=1)
+            ax3.set_ylim([-1000,1000])
+            plt.ylabel('mVoltage (mV)', fontsize=16)
+                
+            h3.set_ydata(whole_voltage_array)
+                
+            fig3.canvas.draw()
+            fig3.canvas.flush_events()
+            return
+        offset = new_data[0]
+        buffer_voltage_array = np.delete(voltage_array, 0)
+        whole_voltage_array = np.append(whole_voltage_array, new_data[1])
+        new_voltage_array = np.append(buffer_voltage_array, new_data[1])
+        h2.set_ydata(new_voltage_array)
+        voltage_array = new_voltage_array
+        if blit:
+            # restore backgrounds
+            fig.canvas.restore_region(ax2background)
+            ax2.draw_artist(h2)
+
+            # fill in the axes rectangle
+            fig.canvas.blit(ax2.bbox)
+
+        else:
+            # redraw everything
+            fig.canvas.draw()
+            fig.canvas.flush_events()
+
+
+        plt.pause(0.000000000001) 
+        #plt.pause calls canvas.draw(), as can be read here:
+        #http://bastibe.de/2013-05-30-speeding-up-matplotlib.html
+
+if __name__ == '__main__':
+    database = 'ECGPAR3'
+    tableName = 'test' 
+    dbu = DB_manager.DatabaseUtility(database, tableName) # create DB object 
+    live_update_demo(True) # 28 fps
