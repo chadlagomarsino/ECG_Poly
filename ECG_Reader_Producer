@@ -6,52 +6,14 @@ Created on Fri Feb 9 17:10:13 2018
 @author: ChadTheMonster
 """
 
-import multiprocessing 
+from matplotlib import pyplot as plt
+import numpy as np
 import DB_manager
-import serial 
 import mysql.connector # connection from python to mySQL
-from datetime import datetime # allows date/time of entries to be recordered
 import time
 
-# Import libraries
-import numpy as np
-from matplotlib import pyplot as plt
-from drawnow import drawnow 
-
-def Producer(): 
-    # open serial port at 9600 baud to pair with Ardiuno board
-    dev = '/dev/cu.usbmodem1421'
-    try:
-        ser = serial.Serial(dev, 9600, timeout = 1)
-    except: 
-        print('ARDUINO CONNECTION NOT FOUND')
-        return
-    # while connected to arudino
-    while True:
-        time.sleep(.05)
-        try: 
-            # read 1 byte from serial connection (one voltage value)
-            # remove tags
-            voltage = ser.readline().decode().strip('\r\n').strip()
-            try:
-                voltage = float(voltage)
-            except:
-                print("BLANK INPUT")
-                continue
-            #print(type(voltage))
-            #print(voltage) # uncomment for testing
-            # add voltage table
-            try: 
-                dbu.AddEntryToTable(voltage)
-            except:
-                print('DATABASE ERROR')
-                return
-        except:
-            print('ARDUINO CONNECTION LOST')
-            return
-            
-
-def Consumer():
+def live_update_demo(blit = True):
+    
     try:
         p = 'spooky74'
         cnx2 = mysql.connector.connect(user = 'root',
@@ -63,7 +25,8 @@ def Consumer():
         print("Connection 2 ERROR")
         
     def grab_data(cursor2, offset):
-        cmd = "SELECT ID, voltage FROM test LIMIT " + str(offset) + ", 5"
+        flag = 0
+        cmd = "SELECT ID, voltage FROM test LIMIT " + str(offset) + ", 1"
         print ("RUNNING COMMAND2: " + cmd)
         try:
             cursor2.execute(cmd)
@@ -72,7 +35,13 @@ def Consumer():
             print ('WITH ' + cmd)
         row = cursor2.fetchone()
         if row == None:
+            if flag == 1:
+                print("END OF TABLE")
+                return
             print("BLANK INPUT 2")
+            flag = 1
+            offset = row[0]
+            return [offset + 1, 0.0]
         while row is not None:
             offset = row[0]
             out_voltage = row[1]
@@ -85,11 +54,25 @@ def Consumer():
     x = np.linspace(0,150., num=100)
     fig = plt.figure()
     ax2 = fig.add_subplot(1, 1, 1)
+    
+    # minor ticks every 5
+    minor_ticks = np.arange(0, 101, 5)
+
+    #ax2.set_xticks(major_ticks)
+    ax2.set_xticks(minor_ticks, minor=True)
+    #ax2.set_yticks(major_ticks)
+    ax2.set_yticks(minor_ticks, minor=True)
+
+    # Or if you want different settings for the grids:
+    ax2.grid(which='both', alpha=0.5)
 
     fig.canvas.draw()   # note that the first draw comes before setting data 
 
-    h2, = ax2.plot(x, lw=3)
-    ax2.set_ylim([-5,5])
+    h2, = ax2.plot(x, lw=1)
+    ax2.set_ylim([-1000,1000])
+    plt.ylabel('Voltage (mV)', fontsize=14)
+    plt.xlabel('Seconds (ms)', fontsize = 14)
+
 
 
     if blit:
@@ -97,15 +80,56 @@ def Consumer():
         ax2background = fig.canvas.copy_from_bbox(ax2.bbox)
         
     offset = 0
+    voltage_array = np.zeros(100)
+    whole_voltage_array = np.zeros(0)
     
-    for i in np.arange(10000):
-        time.sleep(.005)
-        new_data = grab_data(cursor2, offset)
+    for i in np.arange(2000):
+        time.sleep(.01000005)
+        try:
+            new_data = grab_data(cursor2, offset)
+        except:
+            print("END OF FILE")
+            
+            while len(x) < len(whole_voltage_array):
+                x = np.append(x, 0)
+                
+            print(len(x))
+            print(len(whole_voltage_array))
+            
+            fig3 = plt.figure()
+            ax3 = fig3.add_subplot(1,1,1)
+                
+            # Minor ticks every 5
+            minor_ticks = np.arange(0, 101, 5)
+
+            #ax2.set_xticks(major_ticks)
+            ax3.set_xticks(minor_ticks, minor=True)
+            #ax2.set_yticks(major_ticks)
+            ax3.set_yticks(minor_ticks, minor=True)
+
+            # Or if you want different settings for the grids:
+            ax3.grid(which='minor', alpha=0.2)
+
+            fig3.canvas.draw()   # note that the first draw comes before setting data
+                
+            h3, = ax3.plot(x, lw=1)
+            ax3.set_ylim([-1000,1000])
+            plt.ylabel('Voltage (mV)', fontsize=14)
+            plt.xlabel('Seconds (ms)', fontsize=14)
+                
+            h3.set_ydata(whole_voltage_array)
+                
+            fig3.canvas.draw()
+            fig3.canvas.flush_events()
+            return
         offset = new_data[0]
-        graph_voltage = new_data[1]
-        h2.set_ydata(graph_voltage)
+        buffer_voltage_array = np.delete(voltage_array, 0)
+        whole_voltage_array = np.append(whole_voltage_array, new_data[1])
+        new_voltage_array = np.append(buffer_voltage_array, new_data[1])
+        h2.set_ydata(new_voltage_array)
+        voltage_array = new_voltage_array
         if blit:
-            # restore background
+            # restore backgrounds
             fig.canvas.restore_region(ax2background)
             ax2.draw_artist(h2)
 
@@ -121,13 +145,9 @@ def Consumer():
         plt.pause(0.000000000001) 
         #plt.pause calls canvas.draw(), as can be read here:
         #http://bastibe.de/2013-05-30-speeding-up-matplotlib.html
-    
+
 if __name__ == '__main__':
-    database = 'ECGPAR3'
+    database = 'TESTPAR1'
     tableName = 'test' 
     dbu = DB_manager.DatabaseUtility(database, tableName) # create DB object 
-    p = multiprocessing.Process(target = Producer, name = 'Producer')
-    p.start()
-    #time.sleep(5)
-    #c = multiprocessing.Process(target = Consumer, name = 'Consumer')
-    #c.start()
+    live_update_demo(True) # 28 fps
