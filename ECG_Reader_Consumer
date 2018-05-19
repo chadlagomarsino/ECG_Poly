@@ -19,7 +19,6 @@ from matplotlib import pyplot as plt
 from drawnow import drawnow 
 
 def Producer(): 
-    # test 
     # open serial port at 9600 baud to pair with Ardiuno board
     dev = '/dev/cu.usbmodem1421'
     try:
