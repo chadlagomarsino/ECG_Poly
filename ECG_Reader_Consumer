@@ -6,9 +6,9 @@ Created on Fri Feb 9 17:10:13 2018
 @author: ChadTheMonster
 """
 
-import multiprocessing 
+import multiprocessing
 import DB_manager
-import serial 
+import serial
 import mysql.connector # connection from python to mySQL
 from datetime import datetime # allows date/time of entries to be recordered
 import time
@@ -16,20 +16,21 @@ import time
 # Import libraries
 import numpy as np
 from matplotlib import pyplot as plt
-from drawnow import drawnow 
+from drawnow import drawnow
 
-def Producer(): 
+def Producer():
+    #test 2
     # open serial port at 9600 baud to pair with Ardiuno board
     dev = '/dev/cu.usbmodem1421'
     try:
         ser = serial.Serial(dev, 9600, timeout = 1)
-    except: 
+    except:
         print('ARDUINO CONNECTION NOT FOUND')
         return
     # while connected to arudino
     while True:
         time.sleep(.000000001)
-        try: 
+        try:
             # read 1 byte from serial connection (one voltage value)
             # remove tags
             voltage = ser.readline().decode().strip('\r\n').strip()
@@ -41,7 +42,7 @@ def Producer():
             #print(type(voltage))
             #print(voltage) # uncomment for testing
             # add voltage table
-            try: 
+            try:
                 dbu.AddEntryToTable(voltage)
             except:
                 print('DATABASE ERROR')
@@ -49,10 +50,10 @@ def Producer():
         except:
             print('ARDUINO CONNECTION LOST')
             return
-    
+
 if __name__ == '__main__':
     database = 'TESTPAR1'
-    tableName = 'test' 
-    dbu = DB_manager.DatabaseUtility(database, tableName) # create DB object 
+    tableName = 'test'
+    dbu = DB_manager.DatabaseUtility(database, tableName) # create DB object
     p = multiprocessing.Process(target = Producer, name = 'Producer')
     p.start()
